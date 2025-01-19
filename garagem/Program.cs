@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -52,10 +52,27 @@ class Garagem
     }
 }
 
+class Percurso
+{
+    public int Id { get; private set; }
+    public int OrigemId { get; private set; }
+    public int DestinoId { get; private set; }
+    public int Passageiros { get; private set; }
+
+    public Percurso(int id, int origemId, int destinoId, int passageiros)
+    {
+        Id = id;
+        OrigemId = origemId;
+        DestinoId = destinoId;
+        Passageiros = passageiros;
+    }
+}
+
 class ControleFrota
 {
     private List<Veiculo> veiculos;
     private List<Garagem> garagens;
+    private List<Percurso> percursos;
     private List<(int OrigemId, int DestinoId, int VeiculoId, int Passageiros)> viagens;
     private bool jornadaAtiva;
 
@@ -63,6 +80,7 @@ class ControleFrota
     {
         veiculos = new List<Veiculo>();
         garagens = new List<Garagem>();
+        percursos = new List<Percurso>();
         viagens = new List<(int, int, int, int)>();
         jornadaAtiva = false;
     }
@@ -91,6 +109,19 @@ class ControleFrota
         int id = garagens.Count + 1;
         garagens.Add(new Garagem(id, nome));
         Console.WriteLine($"Garagem '{nome}' cadastrada com ID {id}.");
+    }
+
+    public void CadastrarPercurso(int origemId, int destinoId, int passageiros)
+    {
+        if (jornadaAtiva)
+        {
+            Console.WriteLine("Não é possível cadastrar percursos durante a jornada.");
+            return;
+        }
+
+        int id = percursos.Count + 1;
+        percursos.Add(new Percurso(id, origemId, destinoId, passageiros));
+        Console.WriteLine($"Percurso {id} cadastrado de garagem ID {origemId} para garagem ID {destinoId} com {passageiros} passageiros.");
     }
 
     public void IniciarJornada()
@@ -136,7 +167,7 @@ class ControleFrota
         Console.WriteLine("Jornada encerrada.");
     }
 
-    public void LiberarViagem(int origemId, int destinoId, int passageiros)
+    public void LiberarViagem(int percursoId)
     {
         if (!jornadaAtiva)
         {
@@ -144,8 +175,16 @@ class ControleFrota
             return;
         }
 
-        var garagemOrigem = garagens.FirstOrDefault(g => g.Id == origemId);
-        var garagemDestino = garagens.FirstOrDefault(g => g.Id == destinoId);
+        var percurso = percursos.FirstOrDefault(p => p.Id == percursoId);
+
+        if (percurso == null)
+        {
+            Console.WriteLine("Percurso inválido.");
+            return;
+        }
+
+        var garagemOrigem = garagens.FirstOrDefault(g => g.Id == percurso.OrigemId);
+        var garagemDestino = garagens.FirstOrDefault(g => g.Id == percurso.DestinoId);
 
         if (garagemOrigem == null || garagemDestino == null)
         {
@@ -153,27 +192,28 @@ class ControleFrota
             return;
         }
 
-        var veiculo = garagemOrigem.Remover();
+        int passageirosRestantes = percurso.Passageiros;
 
-        if (veiculo == null)
+        while (passageirosRestantes > 0)
         {
-            Console.WriteLine("Nenhum veículo disponível na garagem de origem.");
-            return;
+            var veiculo = garagemOrigem.Remover();
+
+            if (veiculo == null)
+            {
+                Console.WriteLine("Nenhum veículo disponível na garagem de origem.");
+                return;
+            }
+
+            int passageirosTransportados = Math.Min(passageirosRestantes, veiculo.Capacidade);
+            veiculo.PassageirosTransportados += passageirosTransportados;
+            veiculo.Viagens++;
+            passageirosRestantes -= passageirosTransportados;
+
+            viagens.Add((percurso.OrigemId, percurso.DestinoId, veiculo.Id, passageirosTransportados));
+            garagemDestino.Estacionar(veiculo);
+
+            Console.WriteLine($"Viagem liberada de '{garagemOrigem.Nome}' para '{garagemDestino.Nome}' com veículo {veiculo.Id} transportando {passageirosTransportados} passageiros.");
         }
-
-        if (passageiros > veiculo.Capacidade)
-        {
-            Console.WriteLine($"Número de passageiros excede a capacidade do veículo {veiculo.Capacidade}.");
-            return;
-        }
-
-        veiculo.PassageirosTransportados += passageiros;
-        veiculo.Viagens++;
-
-        viagens.Add((origemId, destinoId, veiculo.Id, passageiros));
-        garagemDestino.Estacionar(veiculo);
-
-        Console.WriteLine($"Viagem liberada de '{garagemOrigem.Nome}' para '{garagemDestino.Nome}' com veículo {veiculo.Id} transportando {passageiros} passageiros.");
     }
 
     public void ListarVeiculosGaragem(int garagemId)
@@ -235,13 +275,14 @@ class Program
             Console.WriteLine("\nEscolha uma opção:");
             Console.WriteLine("1. Cadastrar Garagem");
             Console.WriteLine("2. Cadastrar Veículo");
-            Console.WriteLine("3. Iniciar Jornada");
-            Console.WriteLine("4. Encerrar Jornada");
-            Console.WriteLine("5. Liberar Viagem");
-            Console.WriteLine("6. Listar Veículos em Garagem");
-            Console.WriteLine("7. Informar Viagens");
-            Console.WriteLine("8. Listar Viagens");
-            Console.WriteLine("9. Informar Passageiros");
+            Console.WriteLine("3. Cadastrar Percurso");
+            Console.WriteLine("4. Iniciar Jornada");
+            Console.WriteLine("5. Encerrar Jornada");
+            Console.WriteLine("6. Liberar Viagem");
+            Console.WriteLine("7. Listar Veículos em Garagem");
+            Console.WriteLine("8. Informar Viagens");
+            Console.WriteLine("9. Listar Viagens");
+            Console.WriteLine("10. Informar Passageiros");
             Console.WriteLine("0. Sair");
             Console.Write("Opção: ");
             string opcao = Console.ReadLine();
@@ -259,40 +300,45 @@ class Program
                     controle.CadastrarVeiculo(capacidadeVeiculo);
                     break;
                 case "3":
-                    controle.IniciarJornada();
-                    break;
-                case "4":
-                    controle.EncerrarJornada();
-                    break;
-                case "5":
                     Console.Write("ID da garagem de origem: ");
                     int origemId = int.Parse(Console.ReadLine());
                     Console.Write("ID da garagem de destino: ");
                     int destinoId = int.Parse(Console.ReadLine());
                     Console.Write("Número de passageiros: ");
                     int passageiros = int.Parse(Console.ReadLine());
-                    controle.LiberarViagem(origemId, destinoId, passageiros);
+                    controle.CadastrarPercurso(origemId, destinoId, passageiros);
+                    break;
+                case "4":
+                    controle.IniciarJornada();
+                    break;
+                case "5":
+                    controle.EncerrarJornada();
                     break;
                 case "6":
+                    Console.Write("ID do percurso: ");
+                    int percursoId = int.Parse(Console.ReadLine());
+                    controle.LiberarViagem(percursoId);
+                    break;
+                case "7":
                     Console.Write("ID da garagem: ");
                     int garagemId = int.Parse(Console.ReadLine());
                     controle.ListarVeiculosGaragem(garagemId);
-                    break;
-                case "7":
-                    Console.Write("ID da garagem de origem: ");
-                    origemId = int.Parse(Console.ReadLine());
-                    Console.Write("ID da garagem de destino: ");
-                    destinoId = int.Parse(Console.ReadLine());
-                    controle.InformarViagens(origemId, destinoId);
                     break;
                 case "8":
                     Console.Write("ID da garagem de origem: ");
                     origemId = int.Parse(Console.ReadLine());
                     Console.Write("ID da garagem de destino: ");
                     destinoId = int.Parse(Console.ReadLine());
-                    controle.ListarViagens(origemId, destinoId);
+                    controle.InformarViagens(origemId, destinoId);
                     break;
                 case "9":
+                    Console.Write("ID da garagem de origem: ");
+                    origemId = int.Parse(Console.ReadLine());
+                    Console.Write("ID da garagem de destino: ");
+                    destinoId = int.Parse(Console.ReadLine());
+                    controle.ListarViagens(origemId, destinoId);
+                    break;
+                case "10":
                     Console.Write("ID da garagem de origem: ");
                     origemId = int.Parse(Console.ReadLine());
                     Console.Write("ID da garagem de destino: ");
